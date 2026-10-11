@@ -17,6 +17,25 @@
 .hero h2 span{color:var(--gold2)}
 .hero p{font-size:14px;line-height:1.6;color:#eee0c4;max-width:330px}
 .hero .btn{margin-top:8px}
+
+.orders-panel{background:var(--panel);border-radius:22px;padding:18px}
+.sales-cards{display:grid;grid-template-columns:1fr;gap:16px}
+.order-card{background:#202020;border:1px solid #3a3327;border-radius:22px;padding:18px;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.order-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}
+.order-card h4{font-size:20px;margin:0 0 7px;color:var(--gold2)}
+.order-number{font-weight:800;color:var(--gold2);background:#39301c;border:1px solid #65502a;border-radius:14px;padding:9px 12px;white-space:nowrap}
+.order-items{margin:10px 0 14px;padding-left:22px;line-height:1.55;color:#eee5d6}
+.order-meta{font-size:14px;line-height:1.7;color:#d8d0c3;overflow-wrap:anywhere}
+.order-meta strong{color:#fff}
+.order-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:16px}
+.order-actions .btn{min-height:46px;white-space:normal}
+.btn.whatsapp{background:#214d35;color:#d9ffe5}
+.btn.ready{background:#4d3d18;color:#ffe7a6}
+.btn.ontheway{background:#173e4a;color:#c9f2ff}
+.btn.paid{background:#214d35;color:#d9ffe5}
+.btn.remove{background:#4a2424;color:#ffdada}
+.order-status{display:inline-block;margin-top:4px;border-radius:20px;padding:5px 9px;font-size:11px;background:#383124;color:var(--gold2)}
+@media(max-width:420px){.order-card{padding:14px}.order-actions{gap:7px}.order-actions .btn{font-size:12px;padding:9px 6px}.order-card h4{font-size:18px}}
 @media(min-width:700px){.hero{min-height:390px}.hero-content{padding:55px 45px}.hero p{font-size:16px}}
 header{padding:20px 18px 16px;background:linear-gradient(135deg,#1c1a15,#101010);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
 .brand{display:flex;align-items:center;gap:12px}.logo{width:43px;height:43px;border:1px solid var(--gold);border-radius:13px;display:grid;place-items:center;color:var(--gold2);font-size:22px;font-weight:800}.brand h1{font-family:Georgia,serif;font-size:25px;margin:0;letter-spacing:3px}.brand p{font-size:10px;color:var(--gold2);margin:4px 0 0;letter-spacing:1px}
@@ -86,7 +105,7 @@ footer{text-align:center;padding:20px;color:#777;font-size:11px}
  <div class="divider"></div><p>Total do pedido: <span class="inline-total" id="saleTotal">R$ 0,00</span></p>
  <div class="form-actions"><button class="btn" type="submit">Salvar pedido</button><button class="btn secondary" type="button" onclick="closeSaleForm()">Cancelar</button></div>
  </form></div>
- <div class="panel"><div class="title-row"><h3>Histórico de pedidos</h3><input style="max-width:240px" id="saleSearch" placeholder="Buscar cliente, produto ou telefone"></div><div class="table-wrap"><table><thead><tr><th>Data</th><th>Pedido / cliente</th><th>Itens</th><th>Total</th><th>Pagamento</th><th>Andamento</th><th>Ações</th></tr></thead><tbody id="salesTable"></tbody></table></div></div>
+ <div class="panel orders-panel"><div class="title-row"><h3>Pedidos</h3><input style="max-width:300px" id="saleSearch" placeholder="🔎 Buscar cliente, pedido ou produto"></div><div id="salesCards" class="sales-cards"></div></div>
 </section>
 
 <section class="view" id="produtos">
@@ -147,6 +166,15 @@ footer{text-align:center;padding:20px;color:#777;font-size:11px}
 const KEY='gestorProData_v1';
 const blank=()=>({products:[],inputs:[],sales:[],expenses:[],cash:[],opening:0});
 let db=loadDB();
+// Migração: numera pedidos antigos em sequência e mantém o próximo número disponível.
+let highestOrderNo=0;
+db.sales.slice().sort((a,b)=>String(a.createdAt||a.date||'').localeCompare(String(b.createdAt||b.date||''))).forEach(s=>{
+ if(!Number.isFinite(Number(s.orderNo)) || Number(s.orderNo)<=0){s.orderNo=++highestOrderNo;}
+ else highestOrderNo=Math.max(highestOrderNo,Number(s.orderNo));
+});
+db.nextOrderNumber=Math.max(Number(db.nextOrderNumber)||1,highestOrderNo+1);
+try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}
+
 // Catálogo inicial BAGUÊ: será incluído apenas se ainda não houver produtos cadastrados.
 const bagueCatalog = [
  {name:'Baguê de frango',price:27.90},
@@ -198,15 +226,40 @@ function collectSaleItems(){return [...document.querySelectorAll('#saleItems .sa
 function calcSale(){const items=collectSaleItems(),subtotal=items.reduce((a,i)=>a+i.qty*i.price,0),total=Math.max(0,subtotal+num('saleDeliveryFee')-num('saleDiscount'));if($('saleTotal'))$('saleTotal').textContent=money(total);return total}
 function newSaleForm(){ $('formSale').reset();$('saleEditId').value='';$('saleFormTitle').textContent='Registrar pedido';$('saleDate').value=today();$('saleDeliveryFee').value='0';$('saleDiscount').value='0';$('saleItems').innerHTML='';addSaleItem();$('saleForm').style.display='block';window.scrollTo({top:0,behavior:'smooth'})}
 function closeSaleForm(){$('saleForm').style.display='none'}
-function renderSales(){const q=($('saleSearch').value||'').toLowerCase();const list=db.sales.filter(s=>((s.client||'')+' '+(s.phone||'')+' '+(s.productName||'')+' '+(s.items||[]).map(i=>i.productName).join(' ')).toLowerCase().includes(q));$('salesTable').innerHTML=list.length?list.slice().reverse().map(s=>{const items=s.items||[{productName:s.productName||'Produto',qty:s.qty||1}];const summary=items.map(i=>`${esc(i.productName)} × ${i.qty}`).join('<br>');return `<tr><td>${esc(s.date)}</td><td><b>${esc(s.client||'—')}</b><br><span class="muted">${esc(s.phone||'')}</span></td><td>${summary}</td><td>${money(s.total)}</td><td>${esc(s.payment||'—')}<br><span class="tag">${esc(s.status||'Pago')}</span></td><td><span class="tag">${esc(s.orderStatus||'Pedido recebido')}</span></td><td><div class="actions"><button class="btn secondary small" onclick="editSale('${s.id}')">Editar</button><button class="btn small" onclick="sendOrderWhatsApp('${s.id}')">WhatsApp: pedido</button><button class="btn secondary small" onclick="sendStatusWhatsApp('${s.id}','pronto')">Pronto</button><button class="btn secondary small" onclick="sendStatusWhatsApp('${s.id}','caminho')">A caminho</button><button class="btn danger small" onclick="delItem('sales','${s.id}')">Excluir</button></div></td></tr>`}).join(''):emptyRow(7)}
+function renderSales(){
+ const q=($('saleSearch').value||'').toLowerCase();
+ const list=db.sales.filter(s=>((s.orderNo||'')+' '+(s.client||'')+' '+(s.phone||'')+' '+(s.productName||'')+' '+(s.items||[]).map(i=>i.productName).join(' ')).toLowerCase().includes(q));
+ $('salesCards').innerHTML=list.length?list.slice().sort((a,b)=>(Number(b.orderNo)||0)-(Number(a.orderNo)||0)).map(s=>{
+  const items=s.items||[{productName:s.productName||'Produto',qty:s.qty||1,price:s.price||s.total||0}];
+  const itemRows=items.map(i=>`<li>${esc(i.productName)} — ${i.qty} un. × ${money(i.price||0)}</li>`).join('');
+  const received=s.status==='Pago'?s.total:0;
+  const outstanding=Math.max(0,(Number(s.total)||0)-received);
+  const profit=(Number(s.total)||0)-(Number(s.costTotal)||0);
+  const date=s.date?new Date(s.date+'T12:00:00').toLocaleDateString('pt-BR'):'—';
+  return `<article class="order-card">
+   <div class="order-card-head"><div><h4>${esc(s.client||'Cliente')}</h4><div><strong>${esc(items.map(i=>i.productName).join(', '))}</strong></div><div class="order-status">${esc(s.orderStatus||'Pedido recebido')}</div></div><div class="order-number">Pedido #${esc(s.orderNo??'—')}</div></div>
+   <ul class="order-items">${itemRows}</ul>
+   <div class="order-meta">💰 Total: <strong>${money(s.total)}</strong><br>💵 Recebido: ${money(received)} | A receber: ${money(outstanding)}<br>📈 Lucro estimado: <strong>${money(profit)}</strong><br>📅 Data: ${date}<br>💳 Pagamento: ${esc(s.payment||'—')}<br>🚚 Entrega: ${esc(s.delivery||'Retirada')}${s.address?'<br>📍 '+esc(s.address):''}${s.notes?'<br>📝 Observações: '+esc(s.notes):''}</div>
+   <div class="order-actions">
+    <button class="btn secondary" onclick="editSale('${s.id}')">✏️ Editar</button>
+    <button class="btn secondary" onclick="sendOrderWhatsApp('${s.id}')">📲 WhatsApp: pedido</button>
+    <button class="btn ready" onclick="sendStatusWhatsApp('${s.id}','pronto')">🎁 Pedido pronto</button>
+    <button class="btn ontheway" onclick="sendStatusWhatsApp('${s.id}','caminho')">🛵 A caminho</button>
+    <button class="btn paid" onclick="markSaleReceived('${s.id}')">💰 Receber</button>
+    <button class="btn remove" onclick="delItem('sales','${s.id}')">🗑️ Excluir</button>
+   </div>
+  </article>`;
+ }).join(''): `<div class="empty">Nenhum pedido cadastrado ainda.</div>`;
+}
 $('saleSearch').addEventListener('input',renderSales);
 ['saleDeliveryFee','saleDiscount'].forEach(id=>$(id).addEventListener('input',calcSale));
-$('formSale').addEventListener('submit',e=>{e.preventDefault();const items=collectSaleItems();if(!items.length){alert('Adicione pelo menos um produto ao pedido.');return}const id=$('saleEditId').value||uid(),subtotal=items.reduce((a,i)=>a+i.qty*i.price,0),fee=num('saleDeliveryFee'),discount=num('saleDiscount'),total=Math.max(0,subtotal+fee-discount),old=db.sales.find(s=>s.id===id);const order={id,date:$('saleDate').value,client:$('saleClient').value.trim(),phone:$('salePhone').value.trim(),address:$('saleAddress').value.trim(),delivery:$('saleDelivery').value,deliveryFee:fee,notes:$('saleNotes').value.trim(),items,productName:items.map(i=>i.productName).join(', '),qty:items.reduce((a,i)=>a+i.qty,0),price:subtotal,discount,total,costTotal:items.reduce((a,i)=>a+i.cost*i.qty,0),payment:$('salePayment').value,status:$('saleStatus').value,orderStatus:old?.orderStatus||'Pedido recebido',createdAt:old?.createdAt||new Date().toISOString()};const idx=db.sales.findIndex(s=>s.id===id);if(idx>=0)db.sales[idx]=order;else db.sales.push(order);closeSaleForm();saveDB();alert(idx>=0?'Pedido atualizado!':'Pedido salvo!')});
+$('formSale').addEventListener('submit',e=>{e.preventDefault();const items=collectSaleItems();if(!items.length){alert('Adicione pelo menos um produto ao pedido.');return}const id=$('saleEditId').value||uid(),subtotal=items.reduce((a,i)=>a+i.qty*i.price,0),fee=num('saleDeliveryFee'),discount=num('saleDiscount'),total=Math.max(0,subtotal+fee-discount),old=db.sales.find(s=>s.id===id);const order={id,orderNo:old?.orderNo??(db.nextOrderNumber||1),date:$('saleDate').value,client:$('saleClient').value.trim(),phone:$('salePhone').value.trim(),address:$('saleAddress').value.trim(),delivery:$('saleDelivery').value,deliveryFee:fee,notes:$('saleNotes').value.trim(),items,productName:items.map(i=>i.productName).join(', '),qty:items.reduce((a,i)=>a+i.qty,0),price:subtotal,discount,total,costTotal:items.reduce((a,i)=>a+i.cost*i.qty,0),payment:$('salePayment').value,status:$('saleStatus').value,orderStatus:old?.orderStatus||'Pedido recebido',createdAt:old?.createdAt||new Date().toISOString()};const idx=db.sales.findIndex(s=>s.id===id);if(idx>=0)db.sales[idx]=order;else{db.sales.push(order);db.nextOrderNumber=(Number(order.orderNo)||0)+1;}closeSaleForm();saveDB();alert(idx>=0?'Pedido atualizado!':'Pedido salvo!')});
 function editSale(id){const s=db.sales.find(x=>x.id===id);if(!s)return;$('saleEditId').value=s.id;$('saleFormTitle').textContent='Editar pedido';$('saleDate').value=s.date||today();$('saleClient').value=s.client||'';$('salePhone').value=s.phone||'';$('salePayment').value=s.payment||'PIX';$('saleStatus').value=s.status||'Pago';$('saleDelivery').value=s.delivery||'Retirada';$('saleAddress').value=s.address||'';$('saleDeliveryFee').value=s.deliveryFee||0;$('saleDiscount').value=s.discount||0;$('saleNotes').value=s.notes||'';$('saleItems').innerHTML='';const items=s.items||[{productId:s.productId,qty:s.qty||1,price:s.price||0}];items.forEach(i=>addSaleItem(i));$('saleForm').style.display='block';window.scrollTo({top:0,behavior:'smooth'})}
-function getOrderText(s){const items=s.items||[{productName:s.productName||'Produto',qty:s.qty||1,price:s.price||0}];let text=`Olá${s.client?' '+s.client:''}! 😊\n\n*PEDIDO BAGUÊ*\nPedido: ${s.id}\nData: ${s.date}\n\n*Resumo do pedido:*\n`;items.forEach(i=>{text+=`• ${i.qty}x ${i.productName} — ${money(i.qty*i.price)}\n`});if(s.discount)text+=`Desconto: -${money(s.discount)}\n`;if(s.deliveryFee)text+=`Taxa de entrega: ${money(s.deliveryFee)}\n`;text+=`*TOTAL: ${money(s.total)}*\n\nPagamento: ${s.payment||'A combinar'}\nEntrega: ${s.delivery||'A combinar'}`;if(s.address)text+=`\nEndereço: ${s.address}`;if(s.notes)text+=`\n\nObservações: ${s.notes}`;text+='\n\nObrigado por pedir na BAGUÊ! 🔥';return text}
+function getOrderText(s){const items=s.items||[{productName:s.productName||'Produto',qty:s.qty||1,price:s.price||0}];let text=`Olá${s.client?' '+s.client:''}! 😊\n\n*PEDIDO BAGUÊ*\nPedido: #${s.orderNo??'—'}\nData: ${s.date}\n\n*Resumo do pedido:*\n`;items.forEach(i=>{text+=`• ${i.qty}x ${i.productName} — ${money(i.qty*i.price)}\n`});if(s.discount)text+=`Desconto: -${money(s.discount)}\n`;if(s.deliveryFee)text+=`Taxa de entrega: ${money(s.deliveryFee)}\n`;text+=`*TOTAL: ${money(s.total)}*\n\nPagamento: ${s.payment||'A combinar'}\nEntrega: ${s.delivery||'A combinar'}`;if(s.address)text+=`\nEndereço: ${s.address}`;if(s.notes)text+=`\n\nObservações: ${s.notes}`;text+='\n\nObrigado por pedir na BAGUÊ! 🔥';return text}
 function openWhatsApp(s,text){let phone=(s.phone||'').replace(/\D/g,'');if(!phone){const entered=prompt('Informe o WhatsApp do cliente com DDD (ex.: 37999999999):');if(!entered)return;phone=entered.replace(/\D/g,'');s.phone=phone;saveDB()}if(phone.length===10||phone.length===11)phone='55'+phone;window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(text),'_blank')}
 function sendOrderWhatsApp(id){const s=db.sales.find(x=>x.id===id);if(s)openWhatsApp(s,getOrderText(s))}
-function sendStatusWhatsApp(id,kind){const s=db.sales.find(x=>x.id===id);if(!s)return;let text;if(kind==='pronto'){s.orderStatus='Pedido pronto';text=`Olá${s.client?' '+s.client:''}! 🔥 Seu pedido da *BAGUÊ* está pronto! Em breve você poderá recebê-lo ou retirá-lo. Obrigado pela preferência!`;}else{s.orderStatus='A caminho';text=`Olá${s.client?' '+s.client:''}! 🛵 Seu pedido da *BAGUÊ* já está a caminho! Obrigado pela preferência. Bom apetite!`;}saveDB();openWhatsApp(s,text)}
+function sendStatusWhatsApp(id,kind){const s=db.sales.find(x=>x.id===id);if(!s)return;let text;if(kind==='pronto'){s.orderStatus='Pedido pronto';text=`Olá${s.client?' '+s.client:''}! 🔥 O pedido *#${s.orderNo??''}* da *BAGUÊ* está pronto! ${s.delivery==='Entrega'?'Em breve sairá para entrega.':'Já pode ser retirado.'} Obrigado pela preferência!`;}else{s.orderStatus='A caminho';text=`Olá${s.client?' '+s.client:''}! 🛵 O pedido *#${s.orderNo??''}* da *BAGUÊ* já está a caminho do endereço informado! Obrigado pela preferência. Bom apetite!`;}saveDB();openWhatsApp(s,text)}
+function markSaleReceived(id){const s=db.sales.find(x=>x.id===id);if(!s)return;if(confirm(`Marcar o pedido #${s.orderNo??''} como pago/recebido?`)){s.status='Pago';saveDB();}}
 function resetProductForm(){ $('formProduct').reset();$('productId').value='';$('productCost').value=0;$('recipeRows').innerHTML='';$('productForm').style.display='none';toggleCostMode();$('recipeTotal').textContent=money(0)}
 $('productCostMode').addEventListener('change',toggleCostMode);
 function toggleCostMode(){const recipe=$('productCostMode').value==='recipe';$('recipeFields').style.display=recipe?'block':'none';$('manualCostField').style.display=recipe?'none':'flex';if(recipe&&!$('recipeRows').children.length)addRecipeRow()}
